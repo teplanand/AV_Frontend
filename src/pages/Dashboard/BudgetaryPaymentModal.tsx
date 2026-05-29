@@ -33,6 +33,8 @@ import { LoadingButton } from "@mui/lab";
 import AttachFileIcon from "@mui/icons-material/AttachFile";
 import DeleteIcon from "@mui/icons-material/Delete";
 import VisibilityIcon from "@mui/icons-material/Visibility";
+import AddIcon from "@mui/icons-material/Add";
+import RemoveIcon from "@mui/icons-material/Remove";
 import { Tooltip } from "@mui/material";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
@@ -81,11 +83,11 @@ const BudgetaryPaymentModal: React.FC<BudgetaryPaymentModalProps> = ({
     tdsAmount: "",
     tdsSection: "",
     tdsPercentage: "",
-    segment1: "",
-    segment2: "",
-    segment3: "",
-    segment4: "",
   });
+
+  const [segmentsList, setSegmentsList] = useState([
+    { segment1: "", segment2: "", segment3: "", segment4: "", segmentAmount: "" },
+  ]);
 
   const [segment1Options, setSegment1Options] = useState<
     Array<{ Code: string; Description: string }>
@@ -158,6 +160,25 @@ const BudgetaryPaymentModal: React.FC<BudgetaryPaymentModalProps> = ({
 
   const handleDateChange = (name: string, newValue: Dayjs | null) => {
     setFormData((prev) => ({ ...prev, [name]: newValue }));
+  };
+
+  const handleAddSegment = () => {
+    setSegmentsList((prev) => [
+      ...prev,
+      { segment1: "", segment2: "", segment3: "", segment4: "", segmentAmount: "" },
+    ]);
+  };
+
+  const handleRemoveSegment = (index: number) => {
+    setSegmentsList((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSegmentChange = (index: number, field: string, value: any) => {
+    setSegmentsList((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
+    });
   };
 
   const uniqueVendors = React.useMemo(() => {
@@ -235,28 +256,23 @@ const BudgetaryPaymentModal: React.FC<BudgetaryPaymentModalProps> = ({
 
     try {
       const payload = {
-        ...formData,
-        amount: parseFloat(formData.amount),
-        advance_adj: formData.advanceAdj ? parseFloat(formData.advanceAdj) : 0,
-        tds_amount: formData.tdsAmount ? parseFloat(formData.tdsAmount) : 0,
-        tds_percentage: formData.tdsPercentage
-          ? parseFloat(formData.tdsPercentage)
-          : 0,
-        // Map frontend names to backend names if needed, but I've kept them mostly same or snake_case
         name_of_payee: formData.nameOfPayee,
         oracle_code: formData.oracleCode,
         supplier_site_code: formData.supplierSiteCode,
-        invoice_number: formData.invoiceNumber,
-        invoice_date: formData.invoiceDate
-          ? formData.invoiceDate.format("YYYY-MM-DD")
-          : null,
         particulars_of_payment: formData.particularsOfPayment,
         cjo_no: formData.cjoNo,
         po_wo_no: formData.poWoNo,
+        invoice_number: formData.invoiceNumber,
+        invoice_date: formData.invoiceDate ? formData.invoiceDate.format("YYYY-MM-DD") : null,
         date: formData.date ? formData.date.format("YYYY-MM-DD") : null,
+        amount: parseFloat(formData.amount),
         amount_in_words: formData.amountInWords,
         mode_of_payment: formData.modeOfPayment,
+        advance_adj: formData.advanceAdj ? parseFloat(formData.advanceAdj) : 0,
+        tds_amount: formData.tdsAmount ? parseFloat(formData.tdsAmount) : 0,
         tds_section: formData.tdsSection,
+        tds_percentage: formData.tdsPercentage ? parseFloat(formData.tdsPercentage) : 0,
+        segments_data: segmentsList,
       };
 
       const result: any = await createBudgetaryPayment(payload).unwrap();
@@ -298,11 +314,10 @@ const BudgetaryPaymentModal: React.FC<BudgetaryPaymentModalProps> = ({
         tdsAmount: "",
         tdsSection: "",
         tdsPercentage: "",
-        segment1: "",
-        segment2: "",
-        segment3: "",
-        segment4: "",
       });
+      setSegmentsList([
+        { segment1: "", segment2: "", segment3: "", segment4: "", segmentAmount: "" },
+      ]);
       setSelectedFiles([]);
     } catch (error: any) {
       showToast(error?.data?.message || "Failed to create voucher", "error");
@@ -332,7 +347,7 @@ const BudgetaryPaymentModal: React.FC<BudgetaryPaymentModalProps> = ({
       <Dialog
         open={open}
         onClose={onClose}
-        maxWidth="md"
+        maxWidth="lg"
         fullWidth
         PaperProps={{
           sx: {
@@ -608,135 +623,119 @@ const BudgetaryPaymentModal: React.FC<BudgetaryPaymentModalProps> = ({
               </Box>
             </Box>
 
-            {/* --- Row 4.5: Segments (Division, Segment 3, 4, 5) --- */}
-            <Box
-              sx={{
-                display: "grid",
-                gridTemplateColumns: "repeat(12, 1fr)",
-                gap: 2,
-                mt: 0.5,
-              }}
-            >
-              <Box
-                sx={{
-                  gridColumn: { xs: "span 12", sm: "span 6", md: "span 3" },
-                }}
-              >
-                <Autocomplete
-                  size="small"
-                  options={segment1Options}
-                  getOptionLabel={(option) =>
-                    option ? `${option.Code} - ${option.Description}` : ""
-                  }
-                  value={
-                    segment1Options.find(
-                      (opt) => opt.Code === formData.segment1,
-                    ) || null
-                  }
-                  onChange={(_, newValue) => {
-                    setFormData((prev) => ({
-                      ...prev,
-                      segment1: newValue ? newValue.Code : "",
-                    }));
+            {/* --- Row 4.5: Segments (Division, Segment 3, 4, 5) & Segment Amount --- */}
+            <Box sx={{ mt: 0.5, display: "flex", flexDirection: "column", gap: 2 }}>
+              {segmentsList.map((seg, index) => (
+                <Box
+                  key={index}
+                  sx={{
+                    display: "grid",
+                    gridTemplateColumns: {
+                      xs: "repeat(1, 1fr)",
+                      sm: "repeat(2, 1fr)",
+                      md: "repeat(11, 1fr)",
+                    },
+                    gap: 1.5,
+                    alignItems: "center",
                   }}
-                  isOptionEqualToValue={(option, value) =>
-                    option.Code === value.Code
-                  }
-                  renderInput={(params) => (
-                    <TextField {...params} label="Segment 2" fullWidth />
-                  )}
-                />
-              </Box>
-              <Box
-                sx={{
-                  gridColumn: { xs: "span 12", sm: "span 6", md: "span 3" },
-                }}
-              >
-                <Autocomplete
-                  size="small"
-                  options={segment2Options}
-                  getOptionLabel={(option) =>
-                    option ? `${option.Code} - ${option.Description}` : ""
-                  }
-                  value={
-                    segment2Options.find(
-                      (opt) => opt.Code === formData.segment2,
-                    ) || null
-                  }
-                  onChange={(_, newValue) => {
-                    setFormData((prev) => ({
-                      ...prev,
-                      segment2: newValue ? newValue.Code : "",
-                    }));
-                  }}
-                  isOptionEqualToValue={(option, value) =>
-                    option.Code === value.Code
-                  }
-                  renderInput={(params) => (
-                    <TextField {...params} label="Segment 3" fullWidth />
-                  )}
-                />
-              </Box>
-              <Box
-                sx={{
-                  gridColumn: { xs: "span 12", sm: "span 6", md: "span 3" },
-                }}
-              >
-                <Autocomplete
-                  size="small"
-                  options={segment3Options}
-                  getOptionLabel={(option) =>
-                    option ? `${option.Code} - ${option.Description}` : ""
-                  }
-                  value={
-                    segment3Options.find(
-                      (opt) => opt.Code === formData.segment3,
-                    ) || null
-                  }
-                  onChange={(_, newValue) => {
-                    setFormData((prev) => ({
-                      ...prev,
-                      segment3: newValue ? newValue.Code : "",
-                    }));
-                  }}
-                  isOptionEqualToValue={(option, value) =>
-                    option.Code === value.Code
-                  }
-                  renderInput={(params) => (
-                    <TextField {...params} label="Segment 4" fullWidth />
-                  )}
-                />
-              </Box>
-              <Box
-                sx={{
-                  gridColumn: { xs: "span 12", sm: "span 6", md: "span 3" },
-                }}
-              >
-                <Autocomplete
-                  size="small"
-                  options={segment4Options}
-                  getOptionLabel={(option) =>
-                    option ? `${option.Code} - ${option.Description}` : ""
-                  }
-                  value={
-                    segment4Options.find(
-                      (opt) => opt.Code === formData.segment4,
-                    ) || null
-                  }
-                  onChange={(_, newValue) => {
-                    setFormData((prev) => ({
-                      ...prev,
-                      segment4: newValue ? newValue.Code : "",
-                    }));
-                  }}
-                  isOptionEqualToValue={(option, value) =>
-                    option.Code === value.Code
-                  }
-                  renderInput={(params) => (
-                    <TextField {...params} label="Segment 5" fullWidth />
-                  )}
-                />
-              </Box>
+                >
+                  <Box sx={{ gridColumn: "span 2" }}>
+                    <Autocomplete
+                      size="small"
+                      options={segment1Options}
+                      getOptionLabel={(option) =>
+                        option ? `${option.Code} - ${option.Description}` : ""
+                      }
+                      value={
+                        segment1Options.find((opt) => opt.Code === seg.segment1) || null
+                      }
+                      onChange={(_, newValue) =>
+                        handleSegmentChange(index, "segment1", newValue ? newValue.Code : "")
+                      }
+                      isOptionEqualToValue={(option, value) => option.Code === value.Code}
+                      renderInput={(params) => <TextField {...params} label="Segment 2" fullWidth />}
+                    />
+                  </Box>
+                  <Box sx={{ gridColumn: "span 2" }}>
+                    <Autocomplete
+                      size="small"
+                      options={segment2Options}
+                      getOptionLabel={(option) =>
+                        option ? `${option.Code} - ${option.Description}` : ""
+                      }
+                      value={
+                        segment2Options.find((opt) => opt.Code === seg.segment2) || null
+                      }
+                      onChange={(_, newValue) =>
+                        handleSegmentChange(index, "segment2", newValue ? newValue.Code : "")
+                      }
+                      isOptionEqualToValue={(option, value) => option.Code === value.Code}
+                      renderInput={(params) => <TextField {...params} label="Segment 3" fullWidth />}
+                    />
+                  </Box>
+                  <Box sx={{ gridColumn: "span 2" }}>
+                    <Autocomplete
+                      size="small"
+                      options={segment3Options}
+                      getOptionLabel={(option) =>
+                        option ? `${option.Code} - ${option.Description}` : ""
+                      }
+                      value={
+                        segment3Options.find((opt) => opt.Code === seg.segment3) || null
+                      }
+                      onChange={(_, newValue) =>
+                        handleSegmentChange(index, "segment3", newValue ? newValue.Code : "")
+                      }
+                      isOptionEqualToValue={(option, value) => option.Code === value.Code}
+                      renderInput={(params) => <TextField {...params} label="Segment 4" fullWidth />}
+                    />
+                  </Box>
+                  <Box sx={{ gridColumn: "span 2" }}>
+                    <Autocomplete
+                      size="small"
+                      options={segment4Options}
+                      getOptionLabel={(option) =>
+                        option ? `${option.Code} - ${option.Description}` : ""
+                      }
+                      value={
+                        segment4Options.find((opt) => opt.Code === seg.segment4) || null
+                      }
+                      onChange={(_, newValue) =>
+                        handleSegmentChange(index, "segment4", newValue ? newValue.Code : "")
+                      }
+                      isOptionEqualToValue={(option, value) => option.Code === value.Code}
+                      renderInput={(params) => <TextField {...params} label="Segment 5" fullWidth />}
+                    />
+                  </Box>
+                  <Box sx={{ gridColumn: "span 2" }}>
+                    <TextField
+                      fullWidth
+                      type="number"
+                      label="Segment Amount"
+                      value={seg.segmentAmount}
+                      onChange={(e) => handleSegmentChange(index, "segmentAmount", e.target.value)}
+                      size="small"
+                      placeholder="Amount"
+                    />
+                  </Box>
+                  <Box sx={{ gridColumn: "span 1", display: "flex", gap: 0.5 }}>
+                    {index === segmentsList.length - 1 ? (
+                      <IconButton color="primary" onClick={handleAddSegment} size="small" sx={{ bgcolor: "action.hover" }}>
+                        <AddIcon />
+                      </IconButton>
+                    ) : (
+                      <IconButton color="error" onClick={() => handleRemoveSegment(index)} size="small" sx={{ bgcolor: "action.hover" }}>
+                        <RemoveIcon />
+                      </IconButton>
+                    )}
+                    {segmentsList.length > 1 && index === segmentsList.length - 1 && (
+                      <IconButton color="error" onClick={() => handleRemoveSegment(index)} size="small" sx={{ bgcolor: "action.hover" }}>
+                        <RemoveIcon />
+                      </IconButton>
+                    )}
+                  </Box>
+                </Box>
+              ))}
             </Box>
 
             {/* --- Row 6: Deductions (TDS Section) --- */}

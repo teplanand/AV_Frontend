@@ -42,8 +42,9 @@ import VisibilityIcon from "@mui/icons-material/Visibility";
 
 import { useToast } from "../../hooks/useToast";
 import {
-  useGetAllSuppliersQuery,
+  useListSuppliersQuery,
   useCreateSupplierMutation,
+  useSyncVendorsMutation,
 } from "../../redux/api/suppliers";
 import { 
   useCreateRequisitionMutation,
@@ -113,8 +114,46 @@ const CreateRequisitionModal: React.FC<CreateRequisitionModalProps> = ({
   const theme = useTheme();
 
   // --- API ---
-  const { data: suppliersResponse, isLoading: isSuppliersLoading } =
-    useGetAllSuppliersQuery({});
+  const SUPPLIER_PAGE_SIZE = 30;
+  const [supplierSearch, setSupplierSearch] = useState("");
+  const [supplierInputValue, setSupplierInputValue] = useState("");
+  const [supplierPage, setSupplierPage] = useState(0);
+  const [supplierOptions, setSupplierOptions] = useState<any[]>([]);
+  const [supplierHasMore, setSupplierHasMore] = useState(true);
+  const [selectedSupplierObj, setSelectedSupplierObj] = useState<any>(null);
+
+  // Debounced search — reset to page 0 when search term changes
+  const [debouncedSupplierSearch, setDebouncedSupplierSearch] = useState("");
+  React.useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedSupplierSearch(supplierSearch);
+      setSupplierPage(0);
+      setSupplierOptions([]);
+      setSupplierHasMore(true);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [supplierSearch]);
+
+  const { data: suppliersPageData, isFetching: isSuppliersLoading } = useListSuppliersQuery({
+    skip: supplierPage * SUPPLIER_PAGE_SIZE,
+    limit: SUPPLIER_PAGE_SIZE,
+    search: debouncedSupplierSearch,
+  }, { skip: !open });
+
+  // Append new page of options (avoid duplicates)
+  React.useEffect(() => {
+    const items: any[] = (suppliersPageData as any)?.data?.data || [];
+    if (supplierPage === 0) {
+      setSupplierOptions(items);
+    } else {
+      setSupplierOptions((prev) => {
+        const ids = new Set(prev.map((s: any) => s.id));
+        return [...prev, ...items.filter((s: any) => !ids.has(s.id))];
+      });
+    }
+    setSupplierHasMore(items.length === SUPPLIER_PAGE_SIZE);
+  }, [suppliersPageData]);
+
   const [createRequisition, { isLoading: isSubmitting }] =
     useCreateRequisitionMutation();
   const [uploadAttachments] = useUploadRequisitionAttachmentsMutation();
@@ -124,12 +163,9 @@ const CreateRequisitionModal: React.FC<CreateRequisitionModalProps> = ({
   const [getInvoiceBreakthrough] = useLazyGetInvoiceBreakthroughQuery();
   const [getGlDivision] = useLazyGetGlDivisionQuery();
   const [createSupplier] = useCreateSupplierMutation();
+  const [syncVendors, { isLoading: isSyncing }] = useSyncVendorsMutation();
   const { data: nextRefResponse } = useGetNextRefCodeQuery(undefined, { skip: !open });
   const nextRefCode = nextRefResponse?.data?.next_code || "Loading...";
-
-  const suppliers = useMemo(() => {
-    return (suppliersResponse as any)?.data?.data || [];
-  }, [suppliersResponse]);
 
   // --- State ---
   const [requestType, setRequestType] = useState<"PO" | "NON-PO">("PO");
@@ -162,6 +198,12 @@ const CreateRequisitionModal: React.FC<CreateRequisitionModalProps> = ({
       setSupplier("");
       setSupplierSite("");
       setVendorSiteId(null);
+      setSelectedSupplierObj(null);
+      setSupplierSearch("");
+      setSupplierInputValue("");
+      setSupplierPage(0);
+      setSupplierOptions([]);
+      setSupplierHasMore(true);
       setReqDate(dayjs());
       setSettlementDate(dayjs());
       setPoNumberInput("");
@@ -174,7 +216,6 @@ const CreateRequisitionModal: React.FC<CreateRequisitionModalProps> = ({
       setIsBreakthroughLoading(false);
       setSelectedFiles([]);
       setNonPoItems([
-
         {
           id: Date.now(),
           description: "",
@@ -404,10 +445,8 @@ const CreateRequisitionModal: React.FC<CreateRequisitionModalProps> = ({
             });
         } else {
           setBreakthroughData(null);
-        }
-
-        // Find matching supplier in local DB
-        let matchedSupplier = suppliers.find(
+        }        // Find matching supplier in local DB (from already-loaded options)
+        let matchedSupplier = supplierOptions.find(
           (s: any) =>
             (header.VENDOR_ID &&
               String(s.supplier_code) === String(header.VENDOR_ID)) ||
@@ -421,6 +460,7 @@ const CreateRequisitionModal: React.FC<CreateRequisitionModalProps> = ({
 
         if (matchedSupplier) {
           finalSupplierId = matchedSupplier.id;
+          setSelectedSupplierObj(matchedSupplier);
         } else if (header.VENDOR_ID || header.VENDOR_NAME) {
           // New supplier from external source - attempt to register in local database
           try {
@@ -442,6 +482,14 @@ const CreateRequisitionModal: React.FC<CreateRequisitionModalProps> = ({
               (createResult as any)?.id;
 
             if (finalSupplierId) {
+              // Build a local obj so address/type fields show immediately
+              setSelectedSupplierObj({
+                id: finalSupplierId,
+                supplier_code: newSupplierPayload.supplier_code,
+                supplier_name: newSupplierPayload.supplier_name,
+                supplier_address: newSupplierPayload.supplier_address,
+                supplier_type: newSupplierPayload.supplier_type,
+              });
               showToast(
                 `New supplier ${header.VENDOR_NAME} successfully registered`,
                 "success",
@@ -450,9 +498,8 @@ const CreateRequisitionModal: React.FC<CreateRequisitionModalProps> = ({
           } catch (err: any) {
             console.error("Auto-supplier creation failed:", err);
 
-            // Fallback: If registration failed (possibly already exists but missed in first pass),
-            // try to find it one more time in the current suppliers list
-            const retryMatch = suppliers.find(
+            // Fallback: try one more time in currently loaded options
+            const retryMatch = supplierOptions.find(
               (s: any) =>
                 (header.VENDOR_ID &&
                   String(s.supplier_code) === String(header.VENDOR_ID)) ||
@@ -463,6 +510,7 @@ const CreateRequisitionModal: React.FC<CreateRequisitionModalProps> = ({
 
             if (retryMatch) {
               finalSupplierId = retryMatch.id;
+              setSelectedSupplierObj(retryMatch);
             } else {
               showToast(
                 "Matched PO supplier but failed to register locally",
@@ -523,8 +571,25 @@ const CreateRequisitionModal: React.FC<CreateRequisitionModalProps> = ({
     }
   };
 
-  const handleRefreshSupplier = () => {
-    showToast("Refreshing Supplier Data (Mock)...", "info");
+  const handleRefreshSupplier = async () => {
+    try {
+      const result: any = await syncVendors({}).unwrap();
+      const {
+        inserted = 0,
+        updated = 0,
+        unique_vendors = 0,
+        total_from_api = 0,
+      } = result?.data || {};
+      showToast(
+        `Sync done! ${inserted} new suppliers added, ${updated} updated. (${unique_vendors} unique vendors from ${total_from_api} API records)`,
+        "success",
+      );
+    } catch (err: any) {
+      showToast(
+        err?.data?.message || "Failed to sync suppliers from external API",
+        "error",
+      );
+    }
   };
 
   const handleSubmit = async () => {
@@ -778,9 +843,26 @@ const CreateRequisitionModal: React.FC<CreateRequisitionModalProps> = ({
                   <RadioGroup
                     row
                     value={requestType}
-                    onChange={(e) =>
-                      setRequestType(e.target.value as "PO" | "NON-PO")
-                    }
+                    onChange={(e) => {
+                      const newType = e.target.value as "PO" | "NON-PO";
+                      setRequestType(newType);
+                      // Clear all PO-fetched data when switching to NON-PO
+                      if (newType === "NON-PO") {
+                        setPoNumberInput("");
+                        setPoItems([]);
+                        setPoHeaderData(null);
+                        setIsTableVisible(false);
+                        setSupplier("");
+                        setSupplierSite("");
+                        setVendorSiteId(null);
+                        setSelectedSupplierObj(null);
+                        setSupplierInputValue("");
+                        setSupplierSearch("");
+                        setOpeningBalance(0);
+                        setIncludeOpeningBalance(false);
+                        setBreakthroughData(null);
+                      }
+                    }}
                   >
                     <FormControlLabel
                       value="PO"
@@ -843,60 +925,151 @@ const CreateRequisitionModal: React.FC<CreateRequisitionModalProps> = ({
               {/* Row 2: Supplier Details */}
               <div className="col-span-12 md:col-span-3 flex items-center gap-2">
                 <Autocomplete
-                  options={suppliers}
-                  getOptionLabel={(option) =>
-                    `${option.supplier_name} (${option.supplier_code})`
+                  options={supplierOptions}
+                  getOptionLabel={(option: any) =>
+                    option
+                      ? `${option.supplier_name || ""} (${option.supplier_code || ""})`
+                      : ""
                   }
+                  isOptionEqualToValue={(option: any, value: any) =>
+                    option?.id === value?.id
+                  }
+                  filterOptions={(x) => x} // server-side filtering — disable client filter
                   loading={isSuppliersLoading}
-                  value={suppliers.find((s: any) => s.id === supplier) || null}
-                  onChange={(_, newValue) => {
+                  value={selectedSupplierObj}
+                  inputValue={supplierInputValue}
+                  onInputChange={(_, value, reason) => {
+                    setSupplierInputValue(value);
+                    if (reason === "input") {
+                      setSupplierSearch(value);
+                    }
+                  }}
+                  onChange={(_, newValue: any) => {
                     setSupplier(newValue ? newValue.id : "");
+                    setSelectedSupplierObj(newValue || null);
                     setSupplierSite(
                       newValue ? newValue.supplier_address || "" : "",
                     );
                   }}
                   fullWidth
                   disabled={requestType === "PO" && isTableVisible}
+                  noOptionsText={
+                    isSuppliersLoading
+                      ? "Searching..."
+                      : supplierSearch
+                      ? `No suppliers found for "${supplierSearch}"`
+                      : "No suppliers. Click 🔄 to sync from ERP."
+                  }
+                  ListboxProps={{
+                    onScroll: (event: React.SyntheticEvent) => {
+                      const el = event.currentTarget as HTMLUListElement;
+                      const nearBottom =
+                        el.scrollTop + el.clientHeight >= el.scrollHeight - 60;
+                      if (nearBottom && !isSuppliersLoading && supplierHasMore) {
+                        setSupplierPage((prev) => prev + 1);
+                      }
+                    },
+                    style: { maxHeight: 280 },
+                  }}
+                  renderOption={(props, option: any) => (
+                    <li {...props} key={option.id}>
+                      <Box sx={{ py: 0.25 }}>
+                        <Typography
+                          variant="body2"
+                          fontWeight={600}
+                          sx={{ lineHeight: 1.3 }}
+                        >
+                          {option.supplier_name}
+                        </Typography>
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ lineHeight: 1.2 }}
+                        >
+                          #{option.supplier_code}
+                          {option.supplier_type
+                            ? ` • ${option.supplier_type}`
+                            : ""}
+                        </Typography>
+                      </Box>
+                    </li>
+                  )}
                   renderInput={(params) => (
                     <TextField
                       {...params}
                       label="Supplier Name / Code"
                       size="small"
-                      placeholder="Search..."
+                      placeholder="Type to search..."
                       fullWidth
+                      InputProps={{
+                        ...params.InputProps,
+                        endAdornment: (
+                          <>
+                            {isSuppliersLoading ? (
+                              <CircularProgress color="inherit" size={14} />
+                            ) : null}
+                            {params.InputProps.endAdornment}
+                          </>
+                        ),
+                      }}
                     />
                   )}
                 />
-                <Tooltip title="Refresh Suppliers">
+                <Tooltip title="Sync all vendors from ERP">
                   <IconButton
                     onClick={handleRefreshSupplier}
+                    disabled={isSyncing}
                     size="small"
                     sx={{ border: 1, borderColor: "divider", borderRadius: 1 }}
                   >
-                    <RefreshIcon fontSize="small" color="primary" />
+                    {isSyncing ? (
+                      <CircularProgress size={16} color="primary" />
+                    ) : (
+                      <RefreshIcon fontSize="small" color="primary" />
+                    )}
                   </IconButton>
                 </Tooltip>
               </div>
 
               <div className="col-span-12 md:col-span-3">
-                <TextField
-                  fullWidth
-                  label="Supplier Address"
-                  value={
+                {(() => {
+                  const addressValue =
                     requestType === "PO" && poHeaderData
                       ? `${poHeaderData.ADDRESS_LINE1 || ""} ${poHeaderData.ADDRESS_LINE2 || ""}`.trim()
-                      : suppliers.find((s: any) => s.id === supplier)
-                          ?.supplier_address || ""
-                  }
-                  disabled
-                  size="small"
-                  InputProps={{ readOnly: true }}
-                  sx={{
-                    "& .MuiOutlinedInput-root": {
-                      bgcolor: theme.palette.action.hover,
-                    },
-                  }}
-                />
+                      : selectedSupplierObj?.supplier_address || "";
+                  return (
+                    <Tooltip title={addressValue} placement="top" arrow>
+                      <TextField
+                        fullWidth
+                        label="Supplier Address"
+                        value={addressValue}
+                        disabled
+                        size="small"
+                        multiline
+                        maxRows={2}
+                        InputProps={{ readOnly: true }}
+                        inputProps={{
+                          style: {
+                            padding: "4px 0",
+                            lineHeight: "1.4",
+                          },
+                        }}
+                        sx={{
+                          "& .MuiOutlinedInput-root": {
+                            bgcolor: theme.palette.action.hover,
+                            alignItems: "flex-start",
+                            paddingTop: "6px",
+                            paddingBottom: "5px",
+                          },
+                          "& .MuiInputBase-input": {
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          },
+                        }}
+                      />
+                    </Tooltip>
+                  );
+                })()}
               </div>
 
               <div className="col-span-12 md:col-span-3">
@@ -906,8 +1079,7 @@ const CreateRequisitionModal: React.FC<CreateRequisitionModalProps> = ({
                   value={
                     requestType === "PO" && poHeaderData
                       ? poHeaderData.SUPPLIER_TYPE || ""
-                      : suppliers.find((s: any) => s.id === supplier)
-                          ?.supplier_type || ""
+                      : selectedSupplierObj?.supplier_type || ""
                   }
                   disabled
                   size="small"

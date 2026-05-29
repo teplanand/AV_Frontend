@@ -566,11 +566,11 @@ const BudgetaryPaymentPage: React.FC = () => {
                     { label: "Advance Adj.", value: `₹${parseFloat(record.advance_adj || 0).toLocaleString()}`, icon: <CheckCircleIcon color="primary" sx={{ fontSize: 20 }} /> },
                     { label: "TDS Section", value: record.tds_section || "N/A", icon: <ReceiptLongIcon color="primary" sx={{ fontSize: 20 }} /> },
                     { label: "TDS Amount", value: `₹${parseFloat(record.tds_amount || 0).toLocaleString()} (${record.tds_percentage || 0}%)`, icon: <CheckCircleIcon color="primary" sx={{ fontSize: 20 }} /> },
-                    { label: "Segment 2", value: record.segment1 || "N/A", icon: <BusinessIcon color="primary" sx={{ fontSize: 20 }} /> },
-                    { label: "Segment 3", value: record.segment2 || "N/A", icon: <BusinessIcon color="primary" sx={{ fontSize: 20 }} /> },
-                    { label: "Segment 4", value: record.segment3 || "N/A", icon: <BusinessIcon color="primary" sx={{ fontSize: 20 }} /> },
-                    { label: "Segment 5", value: record.segment4 || "N/A", icon: <BusinessIcon color="primary" sx={{ fontSize: 20 }} /> },
                   ];
+                  const validSegments = (record.segments_data || []).filter((seg: any) => 
+                    seg.segment1?.trim() || seg.segment2?.trim() || seg.segment3?.trim() || seg.segment4?.trim() || seg.segment_amount
+                  );
+                  
                   return (
                     <>
                       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' }, gap: 2, mb: 3 }}>
@@ -593,6 +593,37 @@ const BudgetaryPaymentPage: React.FC = () => {
                             </Paper>
                           </Box>
                         ))}
+                      </Box>
+                      
+                      <Box sx={{ mb: 4, p: 2, bgcolor: 'background.paper', borderRadius: 2, border: 1, borderColor: 'divider' }}>
+                        <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <BusinessIcon color="primary" fontSize="small" /> Payment Segments
+                        </Typography>
+                        
+                        {validSegments.length > 0 ? (
+                          <>
+                            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 1, borderBottom: 1, borderColor: 'divider', pb: 1, mb: 1 }}>
+                              <Typography variant="caption" fontWeight={700} color="textSecondary">Segment 2</Typography>
+                              <Typography variant="caption" fontWeight={700} color="textSecondary">Segment 3</Typography>
+                              <Typography variant="caption" fontWeight={700} color="textSecondary">Segment 4</Typography>
+                              <Typography variant="caption" fontWeight={700} color="textSecondary">Segment 5</Typography>
+                              <Typography variant="caption" fontWeight={700} color="textSecondary">Amount (₹)</Typography>
+                            </Box>
+                            {validSegments.map((seg: any, idx: number) => (
+                              <Box key={idx} sx={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 1, py: 0.5 }}>
+                                <Typography variant="body2">{seg.segment1 || "N/A"}</Typography>
+                                <Typography variant="body2">{seg.segment2 || "N/A"}</Typography>
+                                <Typography variant="body2">{seg.segment3 || "N/A"}</Typography>
+                                <Typography variant="body2">{seg.segment4 || "N/A"}</Typography>
+                                <Typography variant="body2">{seg.segment_amount ? parseFloat(seg.segment_amount).toLocaleString() : "N/A"}</Typography>
+                              </Box>
+                            ))}
+                          </>
+                        ) : (
+                          <Typography variant="body2" color="textSecondary" sx={{ fontStyle: 'italic', textAlign: 'center', py: 2 }}>
+                            No segments added for this payment.
+                          </Typography>
+                        )}
                       </Box>
                       <Box sx={{ mb: 4, p: 2, bgcolor: 'action.hover', borderRadius: 2, border: 1, borderColor: 'divider' }}>
                         <Typography variant="caption" color="text.secondary" fontWeight={700} sx={{ textTransform: 'uppercase', mb: 1, display: 'block' }}>

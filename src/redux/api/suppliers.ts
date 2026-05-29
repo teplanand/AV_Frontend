@@ -88,6 +88,17 @@ export const suppliersApi = createApi({
             }),
             invalidatesTags: ["Suppliers"],
         }),
+
+        // ✅ SYNC Vendors from External API → Local DB (no duplicates)
+        syncVendors: builder.mutation({
+            query: (payload = {}) => ({
+                url: `/workflow/suppliers/sync`,
+                method: "POST",
+                body: payload,
+            }),
+            // After sync, invalidate Suppliers cache so dropdown auto-refreshes
+            invalidatesTags: ["Suppliers"],
+        }),
     }),
 });
 
@@ -98,4 +109,6 @@ export const {
     useGetSupplierByIdQuery,
     useUpdateSupplierMutation,
     useSoftDeleteSupplierMutation,
+    useSyncVendorsMutation,
 } = suppliersApi;
+
